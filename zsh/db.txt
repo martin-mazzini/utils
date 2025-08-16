@@ -1,0 +1,6 @@
+# Database Configuration File
+# Format: service_name|connection_string
+# Connection strings should be in PostgreSQL URI format
+# Example: postgresql://user:password@host:port/database
+
+my-app-service|postgresql://user:pass@localhost:5432/my_app_database
