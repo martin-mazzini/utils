@@ -1,0 +1,10 @@
+.memories/
+memories/
+/memories
+./memories
+~/memories-central/
+settings.local.json
+docker-compose.override.yml
+docker-compose.override.yaml
+.ports
+.experimental/
