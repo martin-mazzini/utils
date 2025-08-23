@@ -738,3 +738,142 @@ declare -gA pg_function_descriptions=(
   [pg-list]="List tables or columns in a table"
   [pg-services]="List available database services"
 )
+
+
+
+
+# pg-nuke() - DROP ALL OBJECTS in the database (tables, views, sequences, etc.)
+# WARNING: This completely destroys all database objects!
+# Usage: pg-nuke [service]
+pg-nuke() {
+  # Check if first argument is a service
+  if [[ $# -gt 0 ]]; then
+    _pg_load_config  # Ensure config is loaded for service parsing
+    if _pg_parse_service "$1"; then
+      shift  # Remove service from arguments
+    fi
+  fi
+  
+  _pg_show_repo
+  echo "☢️  WARNING: This will DROP ALL objects in the database!"
+  echo "   This action is IRREVERSIBLE and will:"
+  echo "   • Drop all tables (including data and structure)"
+  echo "   • Drop all views, sequences, types, functions"
+  echo "   • Leave you with a completely empty database"
+  echo ""
+  
+  # Get connection for database name
+  local connection=$(_pg_get_connection)
+  [[ $? -ne 0 ]] && return 1
+  
+  local db_name="${connection##*/}"
+  echo "   Database: $db_name"
+  echo ""
+  
+  # Require confirmation
+  echo -n "   Confirm? (y/N): "
+  read confirmation
+  
+  if [[ "$confirmation" != "y" ]] && [[ "$confirmation" != "yes" ]]; then
+    echo "❌ Cancelled - database unchanged"
+    return 1
+  fi
+  
+  echo ""
+  echo "💣 Initiating nuclear option..."
+  
+  # Get all tables first
+  local tables=$(_pg_get_tables)
+  if [[ -z "$tables" ]]; then
+    echo "   No tables found to drop"
+    return 0
+  fi
+  
+  # Count tables
+  local table_count=$(echo "$tables" | wc -l | tr -d ' ')
+  echo "   Found $table_count tables to destroy..."
+  echo ""
+  
+  # Build a single DROP command for all tables
+  local drop_sql="DROP TABLE IF EXISTS "
+  local first=true
+  
+  while IFS= read -r table; do
+    [[ -z "$table" ]] && continue
+    
+    if [[ "$first" == "true" ]]; then
+      drop_sql+="\"$table\""
+      first=false
+    else
+      drop_sql+=", \"$table\""
+    fi
+  done <<< "$tables"
+  
+  drop_sql+=" CASCADE;"
+  
+  echo "   Dropping all tables with CASCADE..."
+  
+  # Execute the drop
+  local result=$(_pg_execute "$drop_sql")
+  local exit_code=$?
+  
+  if [[ $exit_code -eq 0 ]]; then
+    echo "☠️  All tables have been dropped!"
+    echo ""
+    
+    # Now drop other objects
+    echo "   Dropping remaining objects..."
+    
+    # Drop all sequences that might remain
+    local seq_sql="DROP SEQUENCE IF EXISTS "
+    local sequences=$(_pg_execute "SELECT sequence_name FROM information_schema.sequences WHERE sequence_schema = 'public';" "-tA" 2>/dev/null)
+    if [[ -n "$sequences" ]]; then
+      first=true
+      while IFS= read -r seq; do
+        [[ -z "$seq" ]] && continue
+        if [[ "$first" == "true" ]]; then
+          seq_sql+="\"$seq\""
+          first=false
+        else
+          seq_sql+=", \"$seq\""
+        fi
+      done <<< "$sequences"
+      seq_sql+=" CASCADE;"
+      _pg_execute "$seq_sql" >/dev/null 2>&1
+    fi
+    
+    # Drop all views
+    local view_sql="DROP VIEW IF EXISTS "
+    local views=$(_pg_execute "SELECT viewname FROM pg_views WHERE schemaname = 'public';" "-tA" 2>/dev/null)
+    if [[ -n "$views" ]]; then
+      first=true
+      while IFS= read -r view; do
+        [[ -z "$view" ]] && continue
+        if [[ "$first" == "true" ]]; then
+          view_sql+="\"$view\""
+          first=false
+        else
+          view_sql+=", \"$view\""
+        fi
+      done <<< "$views"
+      view_sql+=" CASCADE;"
+      _pg_execute "$view_sql" >/dev/null 2>&1
+    fi
+    
+    echo ""
+    
+    # Verify it's empty
+    local remaining=$(_pg_get_tables 2>/dev/null)
+    if [[ -z "$remaining" ]]; then
+      echo "✅ Database is now completely empty!"
+    else
+      echo "⚠️  Some tables still remain (this shouldn't happen):"
+      echo "$remaining" | sed 's/^/   /'
+      echo ""
+      echo "   Try running pg-nuke again or check for permission issues"
+    fi
+  else
+    echo "❌ Failed to drop tables"
+    echo "   Error details may be above"
+  fi
+}
