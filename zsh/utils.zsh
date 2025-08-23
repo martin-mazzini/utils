@@ -210,40 +210,95 @@ editservices() {
   cursor ~/.config/zsh/services.sh
 }
 
+
 prettyjson() {
   local clipboard_content
+  local path="$1"
   
-  # Get clipboard content based on OS
-  if command -v pbpaste &>/dev/null; then
-    # macOS
-    clipboard_content=$(pbpaste)
-  elif command -v xclip &>/dev/null; then
-    # Linux with xclip
-    clipboard_content=$(xclip -selection clipboard -o)
-  elif command -v xsel &>/dev/null; then
-    # Linux with xsel
-    clipboard_content=$(xsel --clipboard --output)
-  else
-    echo "❌ No clipboard utility found (pbpaste, xclip, or xsel)"
-    return 1
-  fi
+  # Get clipboard content (macOS)
+  clipboard_content=$(/usr/bin/pbpaste)
   
   # Check if clipboard is empty
-  if [ -z "$clipboard_content" ]; then
+  if [[ -z "$clipboard_content" ]]; then
     echo "❌ Clipboard is empty"
     return 1
   fi
   
-  # Pretty print JSON with jq
-  if command -v jq &>/dev/null; then
-    echo "$clipboard_content" | jq -C '.' 2>/dev/null || {
-      echo "❌ Invalid JSON in clipboard"
+  # Parse the JSON content
+  local json_content=""
+  local is_escaped=false
+  
+  # First try to parse as regular JSON
+  if echo "$clipboard_content" | /opt/homebrew/bin/jq . >/dev/null 2>&1; then
+    # It's valid JSON, use as-is
+    json_content="$clipboard_content"
+  elif [[ "$clipboard_content" == *\\\"* ]]; then
+    # Might be escaped JSON, try to unescape
+    local json_to_parse="$clipboard_content"
+    
+    # If it doesn't start and end with quotes, wrap it
+    if [[ ! "$clipboard_content" =~ ^\".*\"$ ]]; then
+      json_to_parse="\"$clipboard_content\""
+    fi
+    
+    # Try to unescape
+    json_content=$(echo "$json_to_parse" | /opt/homebrew/bin/jq -r . 2>/dev/null)
+    
+    if [[ -z "$json_content" ]] || ! echo "$json_content" | /opt/homebrew/bin/jq . >/dev/null 2>&1; then
+      echo "❌ Failed to parse JSON"
       return 1
-    }
+    fi
+    
+    is_escaped=true
+    echo "📋 JSON parsed from string"
   else
-    echo "❌ jq is not installed. Install it with: brew install jq"
+    echo "❌ Invalid JSON in clipboard"
     return 1
   fi
+  
+  # If no path specified, just pretty print
+  if [ -z "$path" ]; then
+    echo "$json_content" | /opt/homebrew/bin/jq -C '.'
+    return
+  fi
+  
+  # Build jq query from path argument
+  local jq_query=""
+  
+  # Convert our simplified syntax to jq syntax
+  # Split by dots and process each part
+  local PARTS
+  IFS='.' PARTS=(${=path})
+  
+  # Handle the path starting from root
+  local first=true
+  for part in "${PARTS[@]}"; do
+    if [[ "$part" =~ ^[0-9]+$ ]]; then
+      # It's a number, treat as array index
+      if [[ "$first" == "true" ]]; then
+        # Array at root level
+        jq_query=".[${part}]"
+        first=false
+      else
+        jq_query="${jq_query}[${part}]"
+      fi
+    else
+      # It's a property name
+      if [[ "$first" == "true" ]]; then
+        jq_query=".${part}"
+        first=false
+      else
+        jq_query="${jq_query}.${part}"
+      fi
+    fi
+  done
+  
+  # Execute the jq query
+  echo "$json_content" | /opt/homebrew/bin/jq -C "$jq_query" 2>/dev/null || {
+    echo "❌ Invalid path: $path"
+    echo "   Query: $jq_query"
+    return 1
+  }
 }
 
 sync-dotfiles() {
@@ -338,4 +393,242 @@ pngsave() {
     echo "❌ pngpaste not installed. Install with: brew install pngpaste"
     return 1
   fi
+}
+
+
+
+
+# feature() - Creates a new feature documentation file from an Obsidian template
+# Purpose: Quickly scaffold feature documentation with a consistent template
+# How it works:
+#   - Takes a feature name as argument
+#   - Copies template from: /Users/martin/Documents/obsidian-vault/Second brain/Templates/Feature.md
+#   - Creates ./memories/features/[feature-name].md
+#   - Uses osascript (AppleScript) to handle macOS file permissions issues
+#   - Adds a timestamp to the created file
+# Dependencies:
+#   - Obsidian vault with template at specific path
+#   - macOS (uses osascript for file access)
+#   - File system permissions to Documents folder
+# Use case: Quickly scaffold feature documentation with a consistent template
+feature() {
+  if [ -z "$1" ]; then
+    echo "Usage: feature <feature-name>"
+    return 1
+  fi
+  
+  local feature_name="$1"
+  local template_path="/Users/martin/Documents/obsidian-vault/Second brain/Templates/Feature.md"
+  local memories_dir="./memories/features"
+  local target_file="$memories_dir/${feature_name}.md"
+  
+  # Check if template exists
+  if [ ! -f "$template_path" ]; then
+    echo "❌ Template not found at: $template_path"
+    return 1
+  fi
+  
+  # Create memories/features directory if it doesn't exist
+  if [ ! -d "$memories_dir" ]; then
+    echo "📁 Creating $memories_dir directory..."
+    mkdir -p "$memories_dir"
+  fi
+  
+  # Check if target file already exists
+  if [ -f "$target_file" ]; then
+    echo "⚠️  Feature file already exists: $target_file"
+    echo "   Overwrite? (y/n): "
+    read -r confirmation
+    if [[ "$confirmation" != "y" ]]; then
+      echo "❌ Cancelled."
+      return 1
+    fi
+  fi
+  
+  # Function to select files with fzf
+  select_files() {
+    local dir="$1"
+    local description="$2"
+    local depth="$3"
+    
+    if [ ! -d "$dir" ]; then
+      echo "📝 Note: $dir does not exist, skipping $description" >&2
+      return
+    fi
+    
+    echo "" >&2
+    echo "📁 Select $description" >&2
+    echo "   (Tab=select multiple, Enter=confirm, ESC=skip):" >&2
+    
+    local files
+    if [ "$depth" = "1" ]; then
+      # For codebase overviews, only list files directly in ./memories/
+      files=$(find -L "$dir" -maxdepth 1 -type f -name "*.md" 2>/dev/null | sed "s|^\./||" | sort)
+    else
+      # For subdirectories, list all .md files
+      files=$(find -L "$dir" -type f -name "*.md" 2>/dev/null | sed "s|^\./||" | sort)
+    fi
+    
+    if [ -z "$files" ]; then
+      echo "   No files found in $dir" >&2
+      return
+    fi
+    
+    echo "$files" | fzf --multi --height=10 --layout=reverse --prompt="Select files> " --bind="esc:abort" --bind="tab:toggle+down"
+  }
+  
+  # Function to select GitHub PRs and download diffs
+  select_github_prs() {
+    echo "" >&2
+    echo "📁 Select GitHub PRs to include" >&2
+    echo "   (Tab=select multiple, Enter=confirm, ESC=skip):" >&2
+    
+    local selected_prs
+    selected_prs=$(gh pr list --state merged --limit 100 --json number,title,mergedAt,author \
+      --jq '.[] | "\(.number)|\(.title)|\(.mergedAt[:10])|\(.author.login)"' 2>/dev/null | \
+      sort -t'|' -k3 -r | \
+      awk -F'|' '{printf "%-6s | %-10s | %-15s | %s\n", $1, $3, $4, $2}' | \
+      fzf --multi --height=15 --layout=reverse \
+          --preview 'gh pr view {1} --comments' \
+          --preview-window=right:50%:wrap \
+          --header "Select PRs (Tab for multiple)" \
+          --bind="tab:toggle+down" \
+          --bind="esc:abort")
+    
+    if [[ -z "$selected_prs" ]]; then
+      return
+    fi
+    
+    mkdir -p ./memories/prs
+    local pr_files=""
+    
+    echo "$selected_prs" | while IFS= read -r pr_data; do
+      local pr_number=$(echo "$pr_data" | awk '{print $1}')
+      local pr_title=$(gh pr view "$pr_number" --json title -q .title | \
+        tr '[:upper:]' '[:lower:]' | \
+        sed 's/[^a-z0-9]/-/g' | \
+        sed 's/-\+/-/g' | \
+        sed 's/^-\|-$//g')
+      
+      local filename="memories/prs/${pr_title}.txt"
+      echo "   Downloading PR #${pr_number} diff..." >&2
+      gh pr diff "$pr_number" > "./$filename" 2>/dev/null
+      
+      if [ -n "$pr_files" ]; then
+        pr_files+=$'\n'
+      fi
+      pr_files+="$filename"
+    done
+    
+    echo "$pr_files"
+  }
+  
+  # Select files from each category
+  echo "🔍 Select pre-requisite files for the feature documentation..."
+  
+  local overview_files=$(select_files "./memories" "codebase overviews" "1")
+  local feature_files=$(select_files "./memories/features" "prior related features" "2")
+  local plan_files=$(select_files "./memories/plans" "implementation plans" "2")
+  local pr_files=$(select_github_prs)
+  
+  # Copy template using osascript (works around macOS permissions)
+  echo ""
+  echo "📋 Reading feature template..."
+  
+  # Try using osascript to read the file content
+  local content
+  content=$(osascript -e "set theFile to POSIX file \"$template_path\"
+    set fileHandle to open for access theFile
+    set fileContent to read fileHandle
+    close access fileHandle
+    return fileContent" 2>/dev/null)
+  
+  if [ -z "$content" ]; then
+    echo "❌ Cannot read template file. Trying direct copy..."
+    # Last resort: try cp with full path
+    if ! content=$(cat "$template_path" 2>/dev/null); then
+      echo "❌ Failed to read template."
+      echo ""
+      echo "🔧 To fix this, grant terminal access to Documents folder:"
+      echo "   1. Open System Preferences → Security & Privacy → Privacy"
+      echo "   2. Select 'Files and Folders' on the left"
+      echo "   3. Find your terminal app and check 'Documents Folder'"
+      echo "   OR select 'Full Disk Access' and add your terminal"
+      echo "   4. Restart your terminal"
+      return 1
+    fi
+  fi
+  
+  # Process the template content and add selected files
+  local updated_content=""
+  local in_prereq_section=false
+  
+  while IFS= read -r line; do
+    if [[ "$line" == "## 1. Pre-requisite reads:" ]]; then
+      in_prereq_section=true
+      updated_content+="$line"$'\n'
+      updated_content+=$'\n'
+      updated_content+="List all files under \`./memories/**\` to locate the following inputs. Some filenames may include small typos. Once found, read and extract relevant information from:"$'\n'
+      updated_content+=$'\n'
+      
+      # Add codebase overviews
+      updated_content+="- General codebase overviews (e.g., \`./memories/\`)"
+      if [ -n "$overview_files" ]; then
+        updated_content+=":"
+        echo "$overview_files" | while IFS= read -r file; do
+          updated_content+=" \`$file\`"
+        done
+      fi
+      updated_content+=$'\n'
+      
+      # Add feature descriptions
+      updated_content+="- Descriptions of prior related features (\`./memories/features/\`)"
+      if [ -n "$feature_files" ]; then
+        updated_content+=":"
+        echo "$feature_files" | while IFS= read -r file; do
+          updated_content+=" \`$file\`"
+        done
+      fi
+      updated_content+=$'\n'
+      
+      # Add implementation plans
+      updated_content+="- Implementation plans of prior related features (\`./memories/plans/\`)"
+      if [ -n "$plan_files" ]; then
+        updated_content+=":"
+        echo "$plan_files" | while IFS= read -r file; do
+          updated_content+=" \`$file\`"
+        done
+      fi
+      updated_content+=$'\n'
+      
+      # Add PRs
+      updated_content+="- Pull requests implementing similar features (\`./memories/prs/\`)"
+      if [ -n "$pr_files" ]; then
+        updated_content+=":"
+        echo "$pr_files" | while IFS= read -r file; do
+          updated_content+=" \`$file\`"
+        done
+      fi
+      updated_content+=$'\n'
+      
+    elif [[ "$in_prereq_section" == true ]] && [[ "$line" == "## "* ]]; then
+      in_prereq_section=false
+      updated_content+="$line"$'\n'
+    elif [[ "$in_prereq_section" == true ]] && [[ "$line" == "- "* ]]; then
+      # Skip the original pre-requisite lines
+      continue
+    else
+      updated_content+="$line"$'\n'
+    fi
+  done <<< "$content"
+  
+  # Write the updated content to the target file
+  echo "$updated_content" > "$target_file"
+  echo "" >> "$target_file"
+  echo "Created at: $(date '+%Y-%m-%d %H:%M:%S')" >> "$target_file"
+  
+  echo "✅ Feature file created: $target_file"
+  
+  # Open the file in Cursor
+  cursor "$target_file"
 }
