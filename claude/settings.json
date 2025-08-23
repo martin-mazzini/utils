@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Edit(**)",
+      "Bash(npm run test:*)",
+      "Bash(npm run lint:*)",
+      "Bash(yarn run *)",
+      "Bash(yarn test:*)",
+      "Bash(yarn lint:*)",
+      "Bash(vitest:*)",
+      "Bash(eslint:*)",
+      "Bash(prettier:*)",
+      "Bash(git status)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git branch)",
+      "Bash(git branch -a)",
+      "Bash(git grep:*)",
+      "Bash(rg:*)",
+      "Bash(grep:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)",
+      "Bash(sort:*)",
+      "Bash(uniq:*)",
+      "Bash(ls:*)",
+      "Bash(pwd)",
+      "Bash(which:*)",
+      "Bash(awk '{print *}')",
+      "Bash(sed -n '*')",
+      "Bash(pnpm build)",
+      "Bash(pnpm build)",
+      "Bash(pnpm lint)",
+      "Bash(pnpm audit)",
+      "Bash(pnpm outdated)",
+      "Bash(pnpm list)",
+      "Bash(pnpm ls)",
+      "Bash(pnpm why:*)",
+      "Bash(pnpm info:*)",
+      "Bash(pnpm help)",
+      "Bash(pnpm config get:*)",
+      "Bash(pnpm doctor)",
+      "Bash(feature)",
+      "Bash(feature *)"
+    ],
+    "deny": [
+      "Edit(**/.git/**)",
+      "Write(**/.git/**)",
+      "Edit(**/.git/config)",
+      "Write(**/.git/config)",
+      "Edit(**/.env*)",
+      "Write(**/.env*)",
+      "Bash(rm -rf /:*)",
+      "Bash(rm -rf ../:*)",
+      "Bash(sudo:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Write(**/package.json)",
+      "Write(**/package-lock.json)"
+    ],
+    "defaultMode": "acceptEdits",
+    "disableBypassPermissionsMode": "disable"
+  },
+  "model": "opus",
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/martin/.claude/hooks/finish.sh"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/martin/.claude/hooks/input-needed.sh"
+          }
+        ]
+      }
+    ]
+  },
+  "feedbackSurveyState": {
+    "lastShownTime": 1754105372274
+  }
+}

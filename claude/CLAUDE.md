@@ -1,0 +1,7 @@
+- Assume plans/memories are in ./memories (git-ignored). If the filename I give is inexact (typo, no .md), list the folder and pick the obvious match.
+- Never write code comments unless explicitly requested.
+- Code references must be clickable and concise:
+  - Format: relative/path.ext:lineNumber
+  - Keep paths short (avoid wrapping)
+  - Examples: src/index.ts:45, package.json:12
+- Be concise: Every extra word is noise. Skip fluff, jargon, or showy language. Focus on signal.  
