@@ -632,3 +632,161 @@ feature() {
   # Open the file in Cursor
   cursor "$target_file"
 }
+
+# implementcc: Launch Claude Code with /implementPlan slash command for selected plan
+implementcc() {
+  if [ ! -e ./memories/plans ]; then
+    echo "Error: ./memories/plans doesn't exist"
+    return 1
+  fi
+  if [ ! -d ./memories/plans ]; then
+    echo "Error: ./memories/plans is not a directory or doesn't point to a valid directory"
+    return 1
+  fi
+
+  local files
+  files=$(find -L ./memories/plans -type f -name '*.md' 2>/dev/null)
+  if [ -z "$files" ]; then
+    echo "No .md files found in ./memories/plans"
+    return 1
+  fi
+
+  local selected
+  selected=$(echo "$files" | fzf \
+      --header="Select plan file for /implementPlan (ENTER to confirm)" \
+      --preview='cat {}' \
+      --preview-window=right:50%:wrap)
+
+  if [ -z "$selected" ]; then
+    echo "No file selected"
+    return 1
+  fi
+
+  # Extract filename without path and .md extension
+  local filename
+  filename=$(basename "$selected" .md)
+
+  echo "Launching Claude Code with /implementPlan $filename..."
+
+  # Launch Claude Code with implementPlan slash command
+  claude "/implementPlan $filename"
+}
+
+# plancc: Launch Claude Code with /planFeature slash command for selected feature
+plancc() {
+  if [ ! -e ./memories/features ]; then
+    echo "Error: ./memories/features doesn't exist"
+    return 1
+  fi
+  if [ ! -d ./memories/features ]; then
+    echo "Error: ./memories/features is not a directory or doesn't point to a valid directory"
+    return 1
+  fi
+
+  local files
+  files=$(find -L ./memories/features -type f -name '*.md' 2>/dev/null)
+  if [ -z "$files" ]; then
+    echo "No .md files found in ./memories/features"
+    return 1
+  fi
+
+  local selected
+  selected=$(echo "$files" | fzf \
+      --header="Select feature file for /planFeature (ENTER to confirm)" \
+      --preview='cat {}' \
+      --preview-window=right:50%:wrap)
+
+  if [ -z "$selected" ]; then
+    echo "No file selected"
+    return 1
+  fi
+
+  # Extract filename without path and .md extension
+  local filename
+  filename=$(basename "$selected" .md)
+
+  echo "Launching Claude Code with /planFeature $filename..."
+
+  # Launch Claude Code with planFeature slash command
+  claude "/planFeature $filename"
+}
+
+
+
+pngclaude() {
+  if [ -z "$1" ]; then
+    echo "Usage: pngclaude <filename>"
+    echo "Example: pngclaude login-screen"
+    return 1
+  fi
+  
+  local screenshots_dir="./memories/screenshots"
+  local name="$1"
+  
+  # Create directory if it doesn't exist
+  if [ ! -d "$screenshots_dir" ]; then
+    echo "📁 Creating $screenshots_dir directory..."
+    mkdir -p "$screenshots_dir"
+  fi
+  
+  # Add .png extension if not provided
+  if [[ "$name" != *.png ]]; then
+    name="${name}.png"
+  fi
+  
+  local filename="$screenshots_dir/$name"
+  
+  # Save clipboard image using pngpaste (macOS)
+  if command -v pngpaste &>/dev/null; then
+    if pngpaste "$filename" 2>/dev/null; then
+      echo "✅ Screenshot saved: $filename"
+    else
+      echo "❌ No image in clipboard or failed to save"
+      return 1
+    fi
+  else
+    echo "❌ pngpaste not installed. Install with: brew install pngpaste"
+    return 1
+  fi
+}
+
+
+
+# implementcc: Launch Claude Code with /implementPlan slash command for selected plan
+implementcc() {
+  if [ ! -e ./memories/plans ]; then
+    echo "Error: ./memories/plans doesn't exist"
+    return 1
+  fi
+  if [ ! -d ./memories/plans ]; then
+    echo "Error: ./memories/plans is not a directory or doesn't point to a valid directory"
+    return 1
+  fi
+
+  local files
+  files=$(find -L ./memories/plans -type f -name '*.md' 2>/dev/null)
+  if [ -z "$files" ]; then
+    echo "No .md files found in ./memories/plans"
+    return 1
+  fi
+
+  local selected
+  selected=$(echo "$files" | fzf \
+      --header="Select plan file for /implementPlan (ENTER to confirm)" \
+      --preview='cat {}' \
+      --preview-window=right:50%:wrap)
+
+  if [ -z "$selected" ]; then
+    echo "No file selected"
+    return 1
+  fi
+
+  # Extract filename without path and .md extension
+  local filename
+  filename=$(basename "$selected" .md)
+
+  echo "Launching Claude Code with /implementPlan $filename..."
+
+  # Launch Claude Code with implementPlan slash command
+  claude "/implementPlan $filename"
+}
